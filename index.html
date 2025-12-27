@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>圣诞树生成器</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:0;padding:24px 16px;text-align:center;}
+    h1{margin:8px 0 18px;}
+    .btns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin:10px 0 8px;}
+    button{font-size:16px;padding:10px 16px;border:1px solid #999;background:#fff;border-radius:8px;cursor:pointer;}
+    button:disabled{opacity:.45;cursor:not-allowed;}
+    .hint{color:#666;font-size:13px;margin-top:6px;}
+    #previewWrap{margin-top:18px;}
+    #preview{width:360px;max-width:90vw;border-radius:12px;display:none;margin:0 auto;}
+    /* 弹窗 */
+    .mask{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:16px;}
+    .modal{width:min(520px,95vw);background:#fff;border-radius:14px;padding:18px 16px 14px;text-align:left;}
+    .modal h2{margin:0 0 8px;font-size:18px;}
+    .steps{font-size:13px;color:#555;line-height:1.55;margin-bottom:10px;}
+    .qr{width:260px;max-width:75vw;border-radius:12px;display:block;margin:10px auto;}
+    .row{display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;margin-top:10px;}
+    input{font-size:14px;padding:10px 12px;border:1px solid #bbb;border-radius:10px;width:220px;}
+    .small{font-size:12px;color:#999;margin-top:8px;text-align:center;}
+    .error{color:#c00;font-size:12px;margin-top:8px;text-align:center;}
+  </style>
+</head>
+
+<body>
+  <h1>🎄 属于你的小圣诞树 🎄</h1>
+
+  <div class="btns">
+    <button id="genBtn" onclick="generateTree()">生成（只能一次）</button>
+    <button id="downloadFreeBtn" onclick="downloadFree()" disabled>保存（有水印）</button>
+    <button id="payBtn" onclick="openPayModal()" disabled>去水印（兑换码）</button>
+    <button id="downloadPaidBtn" onclick="downloadPaid()" disabled>保存（无水印）</button>
+  </div>
+
+  <div class="hint">提示：先生成 → 免费可保存有水印；付费后输入兑换码，可解锁无水印下载（先把 redeem 跑通）。</div>
+
+  <div id="previewWrap">
+    <img id="preview" alt="预览图" />
+  </div>
+
+  <!-- 支付/兑换码 弹窗 -->
+  <div class="mask" id="mask">
+    <div class="modal">
+      <h2>✅ 付费去水印（兑换码）</h2>
+      <div class="steps">
+        1）先扫码付款（示意）<br>
+        2）你会收到一个“兑换码”（比如：CINDY-0001）<br>
+        3）把兑换码填在下面，点“验证兑换码”，验证成功后解锁无水印下载
+      </div>
+
+      <img class="qr" src="img/money/0.jpg" alt="付款码">
+
+      <div class="row">
+        <input id="codeInput" placeholder="输入兑换码，如 CINDY-0001" />
+        <button id="redeemBtn" onclick="redeemCode()">验证兑换码</button>
+        <button onclick="closePayModal()">关闭</button>
+      </div>
+
+      <div class="small">（现在先跑通：输入 CINDY-0001 → 成功 → 解锁“保存（无水印）”按钮）</div>
+      <div class="error" id="redeemMsg"></div>
+    </div>
+  </div>
+
+  <script>
+    // 你的文件命名规则：
+    // free(有水印): img/free/1.1.png ... 10.1.png
+    // paid(无水印): paid/img_paid/1.jpg ... 10.jpg  （注意：无水印不直接暴露在前端）
+    const imagesFree = Array.from({ length: 10 }, (_, i) => `img/free/${i + 1}.1.png`);
+
+    let selectedIndex = -1;        // 0~9
+    let selectedPaidName = "";     // e.g. "6.jpg"
+    let redeemedToken = "";        // 后端返回的一次性 token
+    let generated = false;
+
+    const preview = document.getElementById("preview");
+    const genBtn = document.getElementById("genBtn");
+    const downloadFreeBtn = document.getElementById("downloadFreeBtn");
+    const payBtn = document.getElementById("payBtn");
+    const downloadPaidBtn = document.getElementById("downloadPaidBtn");
+
+    // 防止坏图标：加载失败就隐藏
+    preview.onerror = () => { preview.style.display = "none"; };
+
+    function generateTree() {
+      if (generated) return;
+
+      selectedIndex = Math.floor(Math.random() * imagesFree.length);
+      const freeSrc = imagesFree[selectedIndex];
+
+      // 显示有水印预览
+      preview.src = freeSrc;
+      preview.style.display = "block";
+
+      // 计算对应无水印文件名（同一编号）
+      selectedPaidName = `${selectedIndex + 1}.jpg`;
+
+      generated = true;
+      genBtn.disabled = true;
+
+      downloadFreeBtn.disabled = false;
+      payBtn.disabled = false;
+
+      // 生成后，先锁住无水印按钮，必须 redeem 成功才开
+      downloadPaidBtn.disabled = true;
+      redeemedToken = "";
+    }
+
+    function downloadFree() {
+      if (selectedIndex < 0) return;
+      const a = document.createElement("a");
+      a.href = imagesFree[selectedIndex];
+      a.download = `christmas_free_${selectedIndex + 1}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    // ===== 弹窗 =====
+    function openPayModal() {
+      document.getElementById("redeemMsg").textContent = "";
+      document.getElementById("codeInput").value = "";
+      document.getElementById("mask").style.display = "flex";
+    }
+    function closePayModal() {
+      document.getElementById("mask").style.display = "none";
+    }
+
+    // ===== redeem：把兑换码发给后端，后端返回 token =====
+    async function redeemCode() {
+      const msg = document.getElementById("redeemMsg");
+      msg.textContent = "";
+
+      const code = document.getElementById("codeInput").value.trim();
+      if (!generated || !selectedPaidName) {
+        msg.textContent = "请先生成一张圣诞树，再来兑换。";
+        return;
+      }
+      if (!code) {
+        msg.textContent = "请输入兑换码。";
+        return;
+      }
+
+      try {
+        const resp = await fetch("/redeem", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code, img: selectedPaidName })
+        });
+
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+          msg.textContent = data.msg || "兑换失败（请检查 server.js 是否运行 / 兑换码是否正确）";
+          return;
+        }
+
+        redeemedToken = data.token;
+        msg.style.color = "#0a7";
+        msg.textContent = "✅ 兑换成功！已解锁无水印下载。";
+
+        downloadPaidBtn.disabled = false;
+        closePayModal();
+      } catch (e) {
+        msg.style.color = "#c00";
+        msg.textContent = "网络错误：请确认你是通过 node server.js 打开的页面（不是 Live Server）。";
+      }
+    }
+
+    // ===== 下载无水印：走后端 /download?token=...&img=... =====
+    function downloadPaid() {
+      if (!redeemedToken || !selectedPaidName) return;
+      const url = `/download?token=${encodeURIComponent(redeemedToken)}&img=${encodeURIComponent(selectedPaidName)}`;
+      window.location.href = url; // 触发下载
+      // 注意：token 是一次性的，你点第二次会失败（这是我们想要的）
+      downloadPaidBtn.disabled = true;
+    }
+  </script>
+</body>
+</html>
