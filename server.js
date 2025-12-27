@@ -2,18 +2,23 @@ const express = require("express");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const cors = require("cors");
 
 const app = express();
 app.use(express.json());
 
-// ====== 配置（按你的文件结构）======
-const PORT = 5500;
-const ROOT_DIR = __dirname; // CHRISTMAS 根目录
-const PRIVATE_IMG_DIR = path.join(ROOT_DIR, "paid", "img_paid"); // paid/img_paid/*.jpg
-const CODES_FILE = path.join(ROOT_DIR, "codes.json");
+// ✅ 允许你的前端域名跨域访问（先用 * 方便调试，稳定后再改成你的域名）
+app.use(cors({ origin: "*" }));
+
+// ====== 配置 ======
+const PORT = process.env.PORT || 3000;
+
+// 你后端项目里的文件结构（不要用 public_html 那套）
+const PRIVATE_IMG_DIR = path.join(__dirname, "paid", "img_paid");
+const CODES_FILE = path.join(__dirname, "codes.json");
 
 // token 存内存：一次性、会过期
-// tokenMap[token] = { img: "6.jpg", exp: 123..., used: false }
+// tokenMap[token] = { img: "1.jpg", exp: 1234567890, used: false }
 const tokenMap = new Map();
 
 // ====== 工具函数 ======
@@ -25,13 +30,15 @@ function writeCodes(data) {
   fs.writeFileSync(CODES_FILE, JSON.stringify(data, null, 2), "utf-8");
 }
 function safeBasename(file) {
-  return path.basename(file || "");
+  return path.basename(file); // 防止 ../ 目录穿越
 }
 
-// ====== 静态资源：把整个项目当作静态站点 ======
-app.use(express.static(ROOT_DIR));
+// ✅ 健康检查：用来确认后端是否真的跑起来了
+app.get("/health", (req, res) => {
+  res.json({ ok: true, msg: "server is running" });
+});
 
-// ====== 兑换码验证：成功后发一次性 token ======
+// ====== 兑换码验证：成功后发一个一次性 token ======
 app.post("/redeem", (req, res) => {
   const { code, img } = req.body;
 
@@ -39,14 +46,14 @@ app.post("/redeem", (req, res) => {
     return res.status(400).json({ ok: false, msg: "缺少 code 或 img" });
   }
 
-  const imgName = safeBasename(img); // e.g. "6.jpg"
+  const imgName = safeBasename(img);
 
   // 检查无水印原图是否存在
   const paidImgPath = path.join(PRIVATE_IMG_DIR, imgName);
   if (!fs.existsSync(paidImgPath)) {
     return res.status(404).json({
       ok: false,
-      msg: "无水印原图不存在：请检查 paid/img_paid 里是否有 " + imgName
+      msg: "无水印原图不存在，请检查后端 paid/img_paid 目录",
     });
   }
 
@@ -73,15 +80,15 @@ app.post("/redeem", (req, res) => {
 
   return res.json({
     ok: true,
-    msg: "兑换成功！已解锁无水印下载（5分钟内有效，仅一次）",
-    token
+    msg: "兑换成功！可下载无水印图（5分钟内有效，仅一次）",
+    token,
   });
 });
 
-// ====== 下载无水印：必须 token + img，且一次性 ======
+// ====== 下载无水印：必须带 token + img，且一次性 ======
 app.get("/download", (req, res) => {
   const token = req.query.token;
-  const img = safeBasename(req.query.img);
+  const img = safeBasename(req.query.img || "");
 
   if (!token || !img) {
     return res.status(400).send("缺少 token 或 img");
@@ -111,12 +118,10 @@ app.get("/download", (req, res) => {
   record.used = true;
   tokenMap.set(token, record);
 
-  // 强制下载
-  res.download(paidImgPath, `christmas_paid_${img}`);
+  res.download(paidImgPath, img);
 });
 
 // ====== 启动 ======
 app.listen(PORT, () => {
-  console.log(`✅ Server running: http://127.0.0.1:${PORT}/index.html`);
-  console.log(`✅ Paid images: ${PRIVATE_IMG_DIR}`);
+  console.log(`✅ Server running on port ${PORT}`);
 });
