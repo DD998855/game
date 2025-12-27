@@ -138,17 +138,19 @@
 
 <script>
 /* ===============================
-   🔧 配置：改这里就够了
+   🔧 配置：只改这里就够了
 ================================ */
-const API_BASE = "https://你的-render-后端地址.onrender.com";
-// 例子： https://christmas-backend.onrender.com
+const API_BASE = "https://test-rgqf.onrender.com"; 
+// ↑↑↑ 把这行改成你 Render 的真实地址（不要以 / 结尾）
 
 /* ===============================
    页面状态
 ================================ */
 let generated = false;
 let unlocked = false;
-let currentImg = "1.jpg"; // 当前选中的图（示例）
+
+// 你现在“生成”写死用 free/1.1.png，所以这里让无水印对应 1.jpg
+let currentImg = "1.jpg"; // paid/img_paid/1.jpg
 
 /* ===============================
    DOM
@@ -163,13 +165,15 @@ const mask = document.getElementById("mask");
 const errorMsg = document.getElementById("errorMsg");
 
 /* ===============================
-   生成（示例用第一张）
+   生成（示例：固定第一张）
 ================================ */
 btnGenerate.onclick = () => {
   if (generated) return;
 
   generated = true;
-  preview.src = "img/free/1.1.png"; // 有水印图
+
+  // ✅ 这里显示“有水印”的图（你的 free 目录）
+  preview.src = "img/free/1.1.png";
   preview.style.display = "block";
 
   btnSaveFree.disabled = false;
@@ -204,6 +208,7 @@ function closeModal() {
 ================================ */
 document.getElementById("btnRedeem").onclick = async () => {
   const code = document.getElementById("codeInput").value.trim();
+
   if (!code) {
     errorMsg.textContent = "请输入兑换码";
     return;
@@ -212,19 +217,17 @@ document.getElementById("btnRedeem").onclick = async () => {
   errorMsg.textContent = "验证中…";
 
   try {
+    // ✅ 重要：请求 Render 后端，而不是本域名
     const res = await fetch(`${API_BASE}/redeem`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        code,
-        img: currentImg
-      })
+      body: JSON.stringify({ code, img: currentImg })
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
 
-    if (!data.ok) {
-      errorMsg.textContent = data.msg || "兑换失败";
+    if (!res.ok || !data.ok) {
+      errorMsg.textContent = (data && data.msg) ? data.msg : `兑换失败（HTTP ${res.status}）`;
       return;
     }
 
@@ -233,14 +236,14 @@ document.getElementById("btnRedeem").onclick = async () => {
     btnSavePaid.disabled = false;
     btnOpenPay.disabled = true;
 
-    closeModal();
-    alert("🎉 兑换成功！已解锁无水印下载");
-
     // 保存 token 供下载用
     window.__TOKEN__ = data.token;
 
+    closeModal();
+    alert("🎉 兑换成功！已解锁无水印下载（5分钟内有效，仅一次）");
+
   } catch (e) {
-    errorMsg.textContent = "网络错误，请确认后端正在运行";
+    errorMsg.textContent = "网络错误：无法访问后端（检查 Render 是否在线/地址是否正确）";
   }
 };
 
@@ -253,9 +256,10 @@ btnSavePaid.onclick = () => {
     return;
   }
 
-  const url =
-    `${API_BASE}/download?token=${window.__TOKEN__}&img=${currentImg}`;
+  // ✅ 重要：下载也必须走 Render 后端
+  const url = `${API_BASE}/download?token=${encodeURIComponent(window.__TOKEN__)}&img=${encodeURIComponent(currentImg)}`;
 
+  // 直接跳转下载
   window.location.href = url;
 };
 
@@ -271,6 +275,7 @@ function download(url, filename) {
   a.remove();
 }
 </script>
+
 
 </body>
 </html>
